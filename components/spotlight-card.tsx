@@ -10,8 +10,8 @@ import { AspectRatio } from "@/components/ui/aspect-ratio";
 interface SpotlightCardProps {
   title: string;
   description: string;
-  mediaSrc: string;
-  mediaType: string;
+  mediaSrc?: string;
+  mediaType?: string;
   href: string;
 }
 
