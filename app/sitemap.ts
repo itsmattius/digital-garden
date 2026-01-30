@@ -7,14 +7,23 @@ import { BASE_URL } from "@/lib/metadata";
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   const loadedPosts = allPosts.filter((post) => post.status === "published");
-  const tags = tagOptions.map((tag) => ({
-    url: `${BASE_URL}/tags/${tag}`,
-    lastModified: now,
-  }));
+
   const posts = loadedPosts.map((post) => ({
     url: `${BASE_URL}/posts/${post.slug}`,
     lastModified: post.lastUpdatedDate || post.publishedDate,
   }));
+
+  const tagsFromPosts = Array.from(new Set(loadedPosts.map((post) => post.tags || []).flat()));
+  const tags = tagsFromPosts.map((tag) => ({
+    url: `${BASE_URL}/tags/${tag}`,
+    lastModified: loadedPosts
+      .filter((post) => post.tags?.includes(tag))
+      .reduce((latest, post) => {
+        const postDate = post.lastUpdatedDate || post.publishedDate;
+        return postDate && new Date(postDate) > new Date(latest) ? new Date(postDate) : latest;
+      }, new Date(0)),
+  }));
+
   const pages = allPages
     .filter((page) => page.status === "published")
     .map((page) => ({
@@ -28,10 +37,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
     {
       url: `${BASE_URL}/projects`,
-      lastModified: now,
-    },
-    {
-      url: `${BASE_URL}/uses`,
       lastModified: now,
     },
     {
