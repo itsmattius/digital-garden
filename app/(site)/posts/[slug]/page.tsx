@@ -128,7 +128,7 @@ export default async function PostPage({ params }: PostProps) {
           </li>
         </ol>
       </nav>
-      <div className="flex flex-col lg:flex-row">
+      <div className="mt-10 flex flex-col lg:flex-row">
         <div className="lg:hidden">
           <div className="mb-4 mt-1 text-sm leading-snug text-muted-foreground">
             <p className="mb-2">{`${post.readTimeMinutes} mins read`}</p>
