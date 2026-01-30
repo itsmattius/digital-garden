@@ -66,7 +66,7 @@ export async function generateMetadata({ params }: PostProps): Promise<Metadata>
 
 export async function generateStaticParams(): Promise<PostProps["params"][]> {
   return allPosts.map((post) => ({
-    slug: `/posts/${post._raw.flattenedPath}`,
+    slug: post.slug,
   }));
 }
 
@@ -172,10 +172,7 @@ export default async function PostPage({ params }: PostProps) {
                 ))}
               </ul>
             )}
-            <SocialShare
-              text={`${post.title} via ${defaultAuthor.handle}`}
-              url={`${BASE_URL}/${post._raw.flattenedPath}`}
-            />
+            <SocialShare text={`${post.title} via ${defaultAuthor.handle}`} url={`${BASE_URL}/posts/${post.slug}`} />
           </div>
         </article>
         <aside className="hidden lg:block">
