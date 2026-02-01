@@ -11,13 +11,17 @@ export interface PostHeading {
 
 export interface NavItem {
   title: string;
+  icon?: React.ReactNode;
   href?: string;
   description?: string;
   content?: ContentNavItem[];
 }
 
 export interface ContentNavItem extends NavItem {
+  blank?: boolean;
+  icon?: React.ReactNode;
   href: string;
+  download?: boolean;
 }
 
 export interface MobileLinkProps extends LinkProps {

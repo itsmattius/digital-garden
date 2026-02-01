@@ -67,7 +67,7 @@ export default async function Home() {
       )}
       {aboutPage && (
         <div className="container max-w-6xl">
-          <h2 className="mb-8 font-heading text-4xl font-bold">So… who am I?</h2>
+          <h2 className="mb-8 mt-8 font-heading text-4xl font-bold">So… who am I?</h2>
           <div className="grid grid-cols-1 place-items-start justify-between gap-12 lg:grid-cols-3">
             <div className="col-span-1 mx-auto flex flex-col items-center justify-center">
               <Image

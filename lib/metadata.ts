@@ -14,7 +14,7 @@ export const defaultAuthor: AuthorType = {
   company: "Freelancer",
   availableForWork: true,
   location: {
-    city: "Yerevan",
+    city: "Yerevan, Armenia",
     media: "/yerevan.webp",
   },
 };

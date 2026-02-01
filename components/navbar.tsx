@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { BookOpen, Briefcase, Clock, FileText } from "lucide-react";
 
 import { navigationLinks } from "@/lib/navigation-links";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,10 @@ export function Navbar() {
           <NavigationMenuItem key={item.title.trim()}>
             {item.content ? (
               <>
-                <NavigationMenuTrigger>{item.title}</NavigationMenuTrigger>
+                <NavigationMenuTrigger>
+                  {item.icon && <span className="mr-2 text-sm font-medium text-slate-900">{item.icon}</span>}
+                  {item.title}
+                </NavigationMenuTrigger>
                 <NavigationMenuContent>
                   <ul className="grid w-[400px] gap-3 p-4 md:w-[500px] md:grid-cols-2 lg:w-[600px]">
                     {item.content.map((subItem) => (
@@ -31,7 +35,8 @@ export function Navbar() {
                         key={subItem.href.trim()}
                         title={subItem.title}
                         href={subItem.href}
-                        target={subItem.href.startsWith("http") ? "_blank" : "_self"}
+                        target={subItem.href.startsWith("http") || subItem.blank ? "_blank" : "_self"}
+                        download={subItem.download}
                       >
                         {subItem.description}
                       </ListItem>

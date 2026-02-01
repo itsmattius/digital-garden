@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, MapPin, Pencil } from "lucide-react";
+import { ArrowRight, ExternalLink, MapPin, Pencil } from "lucide-react";
 
 import siteMetadata, { defaultAuthor } from "@/lib/metadata";
 import { projects } from "@/lib/projects-data";
@@ -31,12 +31,37 @@ export function Sidebar({ className, ...props }: CardProps) {
             />
           </div>
         </CardContent>
-        {/* <Separator />
-        <CardFooter>
-          <Button variant="ghost" className="w-full" disabled>
-            Digital Nomad diaries <ArrowRight className="mr-2 h-4 w-4" />
-          </Button>
-        </CardFooter> */}
+        <Separator />
+        <CardFooter className="py-0">
+          <p className="py-3 text-sm">Remote-friendly (EU timezones)</p>
+        </CardFooter>
+      </Card>
+      <Card className={cn("mb-4", className)} {...props}>
+        <CardHeader>
+          <CardTitle>What can I help you with?</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <Link
+            href="/resume-frontend-cv.pdf"
+            target="_blank"
+            className="flex items-center rounded-md pl-2 hover:bg-background/40 hover:backdrop-blur-lg"
+          >
+            <p className="ml-2 mr-auto text-sm font-medium leading-none">
+              My CV as a <b>Frontend</b> Developer
+            </p>
+            <ExternalLink className="ml-2 h-4 w-4" />
+          </Link>
+          <Link
+            href="/resume-backend-cv.pdf"
+            target="_blank"
+            className="flex items-center rounded-md pl-2 hover:bg-background/40 hover:backdrop-blur-lg"
+          >
+            <p className="ml-2 mr-auto text-sm font-medium leading-none">
+              My CV as a <b>Backend</b> Developer
+            </p>
+            <ExternalLink className="ml-2 h-4 w-4" />
+          </Link>
+        </CardContent>
       </Card>
       <Card className={cn(className)} {...props}>
         <CardHeader>
