@@ -1,13 +1,20 @@
 import { MetadataRoute } from "next";
 import { allPages, allPosts } from "contentlayer/generated";
 
-import { tagOptions } from "@/lib/content-definitions/post";
 import { BASE_URL } from "@/lib/metadata";
+import { projects } from "@/lib/projects-data";
+
+function getLastModifiedDate(Posts: typeof allPosts) {
+  return Posts.reduce((latest, post) => {
+    const postDate = post.lastUpdatedDate || post.publishedDate;
+    return postDate && new Date(postDate) > new Date(latest) ? new Date(postDate) : latest;
+  }, new Date(0));
+}
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   const loadedPosts = allPosts.filter((post) => post.status === "published");
-
+  const lastPostDate = getLastModifiedDate(loadedPosts);
   const posts = loadedPosts.map((post) => ({
     url: `${BASE_URL}/posts/${post.slug}`,
     lastModified: post.lastUpdatedDate || post.publishedDate,
@@ -16,12 +23,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const tagsFromPosts = Array.from(new Set(loadedPosts.map((post) => post.tags || []).flat()));
   const tags = tagsFromPosts.map((tag) => ({
     url: `${BASE_URL}/tags/${tag}`,
-    lastModified: loadedPosts
-      .filter((post) => post.tags?.includes(tag))
-      .reduce((latest, post) => {
-        const postDate = post.lastUpdatedDate || post.publishedDate;
-        return postDate && new Date(postDate) > new Date(latest) ? new Date(postDate) : latest;
-      }, new Date(0)),
+    lastModified: getLastModifiedDate(loadedPosts.filter((post) => post.tags?.includes(tag))),
   }));
 
   const pages = allPages
@@ -33,25 +35,33 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     {
       url: BASE_URL,
-      lastModified: now,
+      lastModified: lastPostDate,
     },
     {
       url: `${BASE_URL}/projects`,
-      lastModified: now,
+      lastModified: lastPostDate,
     },
     {
       url: `${BASE_URL}/social`,
-      lastModified: now,
+      lastModified: lastPostDate,
     },
     ...pages,
     {
+      url: `${BASE_URL}/resume-frontend-cv.pdf`,
+      lastModified: lastPostDate,
+    },
+    {
+      url: `${BASE_URL}/resume-backend-cv.pdf`,
+      lastModified: lastPostDate,
+    },
+    {
       url: `${BASE_URL}/posts`,
-      lastModified: now,
+      lastModified: lastPostDate,
     },
     ...posts,
     {
       url: `${BASE_URL}/tags`,
-      lastModified: now,
+      lastModified: lastPostDate,
     },
     ...tags,
   ];
