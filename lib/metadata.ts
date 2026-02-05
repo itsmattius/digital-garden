@@ -31,7 +31,7 @@ const siteMetadata: SiteMetaData = {
   siteRepo: "https://github.com/itsmattius/digital-garden",
   newsletterProvider: "mailerlite",
   newsletterUrl: "",
-  analyticsProvider: "umami",
+  analyticsProvider: "google",
   defaultTheme: "system",
   activeAnnouncement: false,
   announcement: {
