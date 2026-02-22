@@ -1,0 +1,332 @@
+---
+title: "Setting Up PowerDNS with MySQL, PowerDNS-Admin, GeoIP (LUA) and Nginx Proxy in Docker"
+publishedDate: "2026-02-22"
+lastUpdatedDate: "2026-02-22"
+tags:
+  - dns
+  - powerdns
+  - docker
+  - mariadb
+  - nginx
+  - devops
+  - geoip
+  - lua
+description: "How to run PowerDNS with a MySQL backend, GeoIP support, and PowerDNS-Admin in Docker, while keeping LUA-based geo-located DNS records."
+status: "published"
+---
+
+Running your own DNS server sounds complicated until you break it into pieces.
+
+In this post, I’ll walk through a practical setup of **PowerDNS Authoritative Server** using:
+
+- MariaDB (MySQL backend)
+- PowerDNS-Admin (web UI)
+- GeoIP backend
+- LUA records for geo-located responses
+- Nginx proxy support
+- All inside Docker
+
+Recently, I migrated a friend’s DNS server from file-based zones to a MySQL backend with PowerDNS-Admin. File zones work well for advanced users, especially in pure `geoip` mode — but they are not comfortable for someone who just wants to manage records from a UI.
+
+The goal was simple: keep GeoIP flexibility, but make DNS management user-friendly.
+
+---
+
+## The Problem with Pure GeoIP + File Zones
+
+When running PowerDNS in pure `geoip` mode, you typically:
+
+- Use file-based zones
+- Manually edit zone files
+- Reload configuration after changes
+
+That works. But in real life:
+
+- A small syntax mistake breaks the zone
+- Non-technical users can’t manage it
+- There’s no proper admin panel
+
+Instead of choosing between GeoIP and a UI, we can combine backends.
+
+---
+
+## Using Multiple Backends: gmysql + geoip
+
+PowerDNS allows multiple backends to be launched at the same time.
+
+In this setup, we use:
+
+```
+launch=gmysql,geoip
+```
+
+This means:
+
+- `gmysql` → Stores zones and records in MariaDB
+- `geoip` → Enables GeoIP-based decision making
+
+This hybrid approach gives us database-driven zones **and** geo-aware logic.
+
+---
+
+## Docker Compose Setup
+
+Here is the `docker-compose.yml` used in this setup:
+
+```yaml
+services:
+  db:
+    image: mariadb:10.11
+    restart: unless-stopped
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    environment:
+      MARIADB_ROOT_PASSWORD: $MARIADB_ROOT_PASSWORD
+      MARIADB_USER: powerdns
+      MARIADB_PASSWORD: $DB_PASSWORD
+      MARIADB_DATABASE: powerdns
+
+  powerdns:
+    image: powerdns/pdns-auth-master
+    container_name: powerdns
+    restart: unless-stopped
+    depends_on:
+      - db
+    volumes:
+      - ./pdns.conf:/etc/powerdns/pdns.conf
+      - ./GeoLite2-Country.mmdb:/usr/share/GeoIP/GeoLite2-Country.mmdb
+
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "8081:8081"
+
+  powerdns-admin:
+    image: powerdnsadmin/pda-legacy:latest
+    container_name: powerdns-admin
+    restart: unless-stopped
+    depends_on:
+      - powerdns
+    environment:
+      SIGNUP_ENABLED: "False"
+      SQLALCHEMY_DATABASE_URI: mysql://powerdns:$DB_PASSWORD@db-mariadb-1/powerdns_admin
+      PDNS_API_URL: http://powerdns:8081/
+      PDNS_API_KEY: $API_KEY
+      SECRET_KEY: $SECRET_KEY
+      VIRTUAL_HOST: $VIRTUAL_HOST
+      LETSENCRYPT_HOST: $VIRTUAL_HOST
+      VIRTUAL_PATH: /
+      VIRTUAL_PORT: 80
+    expose:
+      - "80"
+
+volumes:
+  mariadb-data:
+
+networks:
+  default:
+    attachable: true
+```
+
+We now have:
+
+- `db` → MariaDB storing DNS data
+- `powerdns` → Authoritative server
+- `powerdns-admin` → UI layer
+
+---
+
+## Using Nginx Proxy
+
+The `VIRTUAL_HOST` and `LETSENCRYPT_HOST` variables allow integration with `nginx-proxy` and automatic TLS provisioning.
+
+This keeps PowerDNS-Admin available over HTTPS while keeping internal services isolated.
+
+---
+
+## PowerDNS Configuration
+
+Here is the `pdns.conf`:
+
+```ini
+##############################################
+# PowerDNS Authoritative Server Configuration
+##############################################
+
+# --- Backend ---
+launch=gmysql,geoip
+
+gmysql-host=db
+gmysql-port=3306
+gmysql-dbname=powerdns
+gmysql-user=powerdns
+gmysql-password=PUT_DB_PASSWORD_HERE
+gmysql-timeout=30
+gmysql-dnssec=yes
+
+enable-lua-records=yes
+edns-subnet-processing=yes
+geoip-database-files=/usr/share/GeoIP/GeoLite2-Country.mmdb
+
+# --- API ---
+api=yes
+api-key=PUT_API_KEY_HERE
+
+# --- Webserver ---
+webserver=yes
+webserver-address=0.0.0.0
+webserver-port=8081
+webserver-allow-from=0.0.0.0/0
+
+# --- General ---
+default-ttl=3600
+loglevel=6
+
+# --- DNS ---
+local-address=0.0.0.0
+```
+
+### What Changed?
+
+Two important additions:
+
+1. `launch=gmysql,geoip`
+2. `geoip-database-files=/usr/share/GeoIP/GeoLite2-Country.mmdb`
+
+The first enables the GeoIP backend alongside MySQL.
+
+The second tells PowerDNS where the MaxMind GeoLite2 database is mounted inside the container.
+
+Without these, country-based or proximity-based decisions won’t work.
+
+### GeoIP-Based DNS with LUA
+
+With:
+
+- `enable-lua-records=yes`
+- `edns-subnet-processing=yes`
+
+You can return different IPs depending on client location.
+
+---
+
+## Database Schema
+
+Before starting the stack, initialize the PowerDNS MySQL schema.
+
+The official default schema is available in the PowerDNS documentation under the **<a href="https://doc.powerdns.com/authoritative/backends/generic-mysql.html#default-schema" target="_blank" rel="nofollow">Generic MySQL/MariaDB backend</a>** section.
+
+Import it into the `powerdns` database.
+
+---
+
+## Enabling LUA Records in PowerDNS-Admin
+
+After everything is running:
+
+1. Login to PowerDNS-Admin
+2. Go to **Settings → Zone Records**
+3. Enable the `LUA` record type
+
+Now you can create records of type `LUA` directly from the UI.
+
+This is what makes the hybrid setup powerful: database-driven zones with programmable DNS logic.
+
+---
+
+### Example 1 — Pick the Closest IP
+
+```lua
+pickclosest({'192.0.2.1','192.0.2.2','198.51.100.1'})
+```
+
+PowerDNS evaluates geographic distance and returns the closest address.
+
+---
+
+### Example 2 — Return Based on Country
+
+```lua
+;if country('US') then
+  return {'192.0.2.1','192.0.2.2','198.51.100.1'}
+else
+  return '192.0.2.2'
+end
+```
+
+Here:
+
+- US users receive a specific IP pool
+- Others receive a fallback IP
+
+You can return:
+
+- A single string value
+- An array of strings
+
+This allows basic traffic steering without deploying Anycast or external load balancers.
+
+---
+
+## Returning Client Info via TXT Records
+
+One of the fun parts of enabling LUA + GeoIP is that you can inspect and return information about the requester.
+
+Because `bestwho` represents the client IP (or the EDNS subnet if available), you can expose it in a TXT record.
+
+### Return the Requester IP
+
+```lua
+";return { bestwho:toString() }"
+```
+
+Querying this record will return the client IP address as seen by PowerDNS.
+
+---
+
+### Return GeoIP Attributes
+
+You can also use `geoiplookup()` with different attributes.
+
+Example records:
+
+```dns
+asn.example.com       IN LUA TXT "geoiplookup(bestwho:toString(), GeoIPQueryAttribute.ASn)"
+city.example.com      IN LUA TXT "geoiplookup(bestwho:toString(), GeoIPQueryAttribute.City)"
+continent.example.com IN LUA TXT "geoiplookup(bestwho:toString(), GeoIPQueryAttribute.Continent)"
+country.example.com   IN LUA TXT "geoiplookup(bestwho:toString(), GeoIPQueryAttribute.Country)"
+country2.example.com  IN LUA TXT "geoiplookup(bestwho:toString(), GeoIPQueryAttribute.Country2)"
+name.example.com      IN LUA TXT "geoiplookup(bestwho:toString(), GeoIPQueryAttribute.Name)"
+region.example.com    IN LUA TXT "geoiplookup(bestwho:toString(), GeoIPQueryAttribute.Region)"
+location.example.com  IN LUA TXT "geoiplookup(bestwho:toString(), GeoIPQueryAttribute.Location)"
+```
+
+Depending on the requester’s IP and your GeoLite2 database, these may return values such as:
+
+- ASN number
+- City name
+- Continent code
+- Country code
+- Region code
+- Latitude / longitude
+
+This can be useful for debugging GeoIP behavior — or just for fun.
+
+---
+
+## Final Thoughts
+
+Running PowerDNS in pure file-based GeoIP mode is powerful but not user-friendly.
+
+Running only MySQL backend is convenient but limits advanced routing flexibility.
+
+Combining `gmysql` and `geoip` gives you both:
+
+- A clean admin UI
+- Database-driven zones
+- Programmable DNS logic
+- Geo-aware responses
+
+Docker keeps the entire stack portable and reproducible.
+
+If you need a self-hosted authoritative DNS server with UI management and geo-located responses, this hybrid approach is practical and production-ready.
