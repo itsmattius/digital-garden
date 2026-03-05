@@ -1,5 +1,10 @@
 export const projects = [
   {
+    title: "Briefing (News aggregator backend)",
+    description: `Briefing is a Laravel-based news aggregator backend developed as a take-home assignment. It fetches articles from multiple sources and exposes a RESTful API for frontend consumption.`,
+    href: "/posts/projects-briefing",
+  },
+  {
     title: "Documulate Extension",
     description: `A Chrome extension for highlighting and annotating web pages and PDFs. Features include effortless highlighting with customizable colors, cross-device sync, secure authentication, a personal knowledge library, and a smart research assistant that answers questions about the current page or uploaded documents.`,
     href: "https://documulate.com",
