@@ -10,7 +10,7 @@ tags:
   - solid
   - backend
   - interview
-description: I recently completed a take-home assignment for a Backend Web Developer position — build a news aggregator API in Laravel. Here's how I approached the architecture, dealt with dead APIs, and kept things simple without sacrificing good engineering.
+description: I recently completed a take-home assignment for a Backend Web Developer position, build a news aggregator API in Laravel. Here's how I approached the architecture, dealt with dead APIs, and kept things simple without sacrificing good engineering.
 status: published
 ---
 
@@ -38,9 +38,9 @@ So I picked four real, working sources and built around those.
 | ESPN           | Unofficial API    | Undocumented but stable for soccer leagues |
 | BBC            | Public RSS feeds  | No API, but RSS is officially maintained   |
 
-For BBC I fetched 9 category feeds (Top Stories, World, Business, Technology, Science & Environment, Health, Entertainment & Arts, Politics, UK). RSS gives me everything I need except post content or summary — title, published date, link, categories — without requiring auth. It's not glamorous but it works, and it's better than pretending the BBC API still exists.
+For BBC I fetched 9 category feeds (Top Stories, World, Business, Technology, Science & Environment, Health, Entertainment & Arts, Politics, UK). RSS gives me everything I need except post content or summary, title, published date, link, categories, without requiring auth. It's not glamorous but it works, and it's better than pretending the BBC API still exists.
 
-The ESPN integration uses an undocumented internal API. I iterate over 6 leagues (Premier League, La Liga, Bundesliga, Serie A, MLS, UEFA Champions League) and pull soccer news per league. It could break if ESPN changes their internals, but for a take-home it's fine — and it was a fun find.
+The ESPN integration uses an undocumented internal API. I iterate over 6 leagues (Premier League, La Liga, Bundesliga, Serie A, MLS, UEFA Champions League) and pull soccer news per league. It could break if ESPN changes their internals, but for a take-home it's fine, and it was a fun find.
 
 ## Architecture
 
@@ -50,7 +50,7 @@ I wanted a clean separation between "how do we talk to the API" and "what do we 
 
 Each source has a dedicated service class (`GuardianNewsService`, `NYTimesNewsService`, etc.) that extends a shared `NewsService` base. The service is responsible for one thing: making HTTP requests and returning typed DTOs.
 
-`NewsService` provides the shared `insert()` method that persists an article — authors, tags, pivots — in a single database transaction. All source services inherit this.
+`NewsService` provides the shared `insert()` method that persists an article, authors, tags, pivots, in a single database transaction. All source services inherit this.
 
 ```php title="app/Services/NewsService.php"
 public function insert(NewsItemDTO $article): Document
@@ -94,7 +94,7 @@ class NewsItemDTO
 }
 ```
 
-Tags carry a `role` enum value — `KEYWORD` or `CATEGORY` — stored on the pivot table. Guardian's API returns both keywords and sections, so this distinction matters for filtering later.
+Tags carry a `role` enum value, `KEYWORD` or `CATEGORY`, stored on the pivot table. Guardian's API returns both keywords and sections, so this distinction matters for filtering later.
 
 ### Sources
 
@@ -107,14 +107,14 @@ interface ISource
 }
 ```
 
-Each source queries the database for existing IDs before inserting, so re-running the fetch command is safe. Errors on individual articles are logged and skipped — one bad article doesn't abort the whole batch.
+Each source queries the database for existing IDs before inserting, so re-running the fetch command is safe. Errors on individual articles are logged and skipped, one bad article doesn't abort the whole batch.
 
 Pagination strategies differ by source:
 
-- **Guardian** — cursor-based, using the latest stored `source_id` as the starting point
-- **NYTimes** — page-based, hard-limited to 1000 by the API
-- **ESPN** — page-based per league, distributes `maxItems` evenly across leagues
-- **BBC** — no pagination needed, RSS always returns the current items
+- **Guardian**: cursor-based, using the latest stored `source_id` as the starting point
+- **NYTimes**: page-based, hard-limited to 1000 by the API
+- **ESPN**: page-based per league, distributes `maxItems` evenly across leagues
+- **BBC**: no pagination needed, RSS always returns the current items
 
 ### Contracts
 
@@ -152,17 +152,17 @@ Adding a new source means: new service, new source class, new enum case. Nothing
 
 ## The API
 
-The document list endpoint is powered by `spatie/laravel-query-builder`, which gives the client control over what data comes back and how it's filtered — all from query parameters, with no extra controller code.
+The document list endpoint is powered by `spatie/laravel-query-builder`, which gives the client control over what data comes back and how it's filtered, all from query parameters, with no extra controller code.
 
-**Filtering** — custom filter classes handle each concern:
+**Filtering**: custom filter classes handle each concern:
 
-- `filter[title]` — partial title match
-- `filter[tag-slug]` — articles tagged with a given slug
-- `filter[author-slug]` — articles by a given author
-- `filter[source-type]` — by source (`guardian`, `nytimes`, `espn`, `bbc`)
-- `filter[published-from]` / `filter[published-to]` — date range
+- `filter[title]`: partial title match
+- `filter[tag-slug]`: articles tagged with a given slug
+- `filter[author-slug]`: articles by a given author
+- `filter[source-type]`: by source (`guardian`, `nytimes`, `espn`, `bbc`)
+- `filter[published-from]` / `filter[published-to]`: date range
 
-**Field selection** — the client can request only the columns it needs:
+**Field selection**: the client can request only the columns it needs:
 
 ```
 GET /api/documents?fields[documents]=title,slug,published_at
@@ -170,40 +170,40 @@ GET /api/documents?fields[documents]=title,slug,published_at
 
 By default, the `content` column is excluded from list responses (articles can be large). It's only returned on the single-document endpoint or when the client explicitly requests it via `fields`.
 
-**Includes** — relationships are opt-in, not always loaded:
+**Includes**: relationships are opt-in, not always loaded:
 
 ```
 GET /api/documents?include=authors,tags
 ```
 
-**Sorting** — prefix with `-` for descending:
+**Sorting**: prefix with `-` for descending:
 
 ```
 GET /api/documents?sort=-published_at
 ```
 
-The result is a flexible, frontend-friendly API where the client fetches exactly what it needs — nothing more.
+The result is a flexible, frontend-friendly API where the client fetches exactly what it needs, nothing more.
 
-OpenAPI docs are auto-generated by `dedoc/scramble` — no manual spec maintenance needed.
+OpenAPI docs are auto-generated by `dedoc/scramble`, no manual spec maintenance needed.
 
 ## Performance: Laravel Octane
 
 The app runs on [Laravel Octane](https://laravel.com/docs/octane). The difference from a standard PHP setup is worth explaining.
 
-With a traditional PHP-FPM setup, every HTTP request boots Laravel from scratch — loads the framework, registers service providers, resolves bindings, then handles the request and discards everything. That bootstrap cost is paid on every single request.
+With a traditional PHP-FPM setup, every HTTP request boots Laravel from scratch, loads the framework, registers service providers, resolves bindings, then handles the request and discards everything. That bootstrap cost is paid on every single request.
 
-Octane starts Laravel **once** and keeps it alive as a long-running process. Requests are handled by the already-booted application, so the framework overhead is paid once at startup, not per request. The result is significantly lower CPU and memory usage under load, and much higher throughput — the same server handles more concurrent requests without needing more resources.
+Octane starts Laravel **once** and keeps it alive as a long-running process. Requests are handled by the already-booted application, so the framework overhead is paid once at startup, not per request. The result is significantly lower CPU and memory usage under load, and much higher throughput, the same server handles more concurrent requests without needing more resources.
 
 For a news API where the application state is read-heavy and mostly stateless between requests, this is a straightforward win.
 
 ## Database Schema
 
 ```
-documents       — source_type, source_id, title, content, slug, image, published_at
-authors         — name, slug
-tags            — title, slug
-document_author — pivot (cascades on delete)
-document_tag    — pivot with role enum (KEYWORD / CATEGORY)
+documents      : source_type, source_id, title, content, slug, image, published_at
+authors        : name, slug
+tags           : title, slug
+document_author: pivot (cascades on delete)
+document_tag   : pivot with role enum (KEYWORD / CATEGORY)
 ```
 
 Authors and tags are deduplicated by slug using `firstOrCreate`. The same author appearing across multiple articles shares one row.
@@ -212,24 +212,24 @@ Authors and tags are deduplicated by slug using `firstOrCreate`. The same author
 
 Tests are split by layer:
 
-- **Service tests** — `MockHandler` for Guzzle, no real HTTP. Tests that the service maps API responses to correct DTOs.
-- **Source tests** — mock the service, test pagination logic, deduplication, error handling.
-- **Controller tests** — full HTTP feature tests with `RefreshDatabase` on in-memory SQLite.
+- **Service tests**: `MockHandler` for Guzzle, no real HTTP. Tests that the service maps API responses to correct DTOs.
+- **Source tests**: mock the service, test pagination logic, deduplication, error handling.
+- **Controller tests**: full HTTP feature tests with `RefreshDatabase` on in-memory SQLite.
 
 One thing I hit during testing: several bugs surfaced that only showed up because of the test coverage. The `authors()` relation was pointing at the wrong pivot table name, two filter classes were calling `whereHas` with singular relation names, and a form request was reading the wrong route parameter. All caught and fixed. This is exactly why you write tests.
 
 ## What I'd Do Differently
 
-**Scheduler** — Right now you run the fetch command manually. In production you'd schedule it with `php artisan schedule:work` or a cron. Trivial to add, left it out to keep the scope clean.
+**Scheduler**: Right now you run the fetch command manually. In production you'd schedule it with `php artisan schedule:work` or a cron. Trivial to add, left it out to keep the scope clean.
 
-**Queue** — Fetching hundreds of articles per source is synchronous. For production, each source fetch should be a queued job.
+**Queue**, Fetching hundreds of articles per source is synchronous. For production, each source fetch should be a queued job.
 
-**Full article body for NYTimes** — The NYT API doesn't return article body text, only abstracts. A real implementation would scrape or use a different endpoint. I stored what the API gives.
+**Full article body for NYTimes**, The NYT API doesn't return article body text, only abstracts. A real implementation would scrape or use a different endpoint. I stored what the API gives.
 
-**ESPN stability** — The unofficial API could change without notice. Guardian and NYTimes have stable, documented APIs. Worth replacing ESPN with a proper source if this went to production.
+**ESPN stability**, The unofficial API could change without notice. Guardian and NYTimes have stable, documented APIs. Worth replacing ESPN with a proper source if this went to production.
 
 ## Closing
 
-The assignment took 2 days. The interesting part wasn't the Laravel plumbing — that's routine — it was the source selection problem. Half the suggested APIs don't exist anymore, and BBC RSS is a legitimate engineering decision, not a cop-out. Sometimes the right answer to "integrate with X API" is "X API is gone, here's what I did instead and why."
+The assignment took 2 days. The interesting part wasn't the Laravel plumbing, that's routine, it was the source selection problem. Half the suggested APIs don't exist anymore, and BBC RSS is a legitimate engineering decision, not a cop-out. Sometimes the right answer to "integrate with X API" is "X API is gone, here's what I did instead and why."
 
 The code is on GitHub: [itsmattius/briefing](https://github.com/itsmattius/briefing)
