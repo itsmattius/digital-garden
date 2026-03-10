@@ -1,0 +1,379 @@
+---
+title: "Building a Private S3 Storage Server Behind NAT with MinIO, Nginx and SFTPGo"
+publishedDate: 2026-03-10
+lastUpdatedDate: 2026-03-10
+tags:
+  - devops
+  - proxmox
+  - minio
+  - s3
+  - nginx
+  - ftp
+  - sftpgo
+description: "Running a MinIO storage server behind NAT using Proxmox containers and solving FTP passive mode problems with SFTPGo."
+status: "published"
+---
+
+Recently I wanted to build a **cheap storage infrastructure** using only **one public IP address**.
+
+I already had a **VPS running inside a Proxmox container (CT1)** and I decided to create another container as a **storage server (CT2)**. The storage server should **not have a public IP**, so it stays isolated and only accessible through the first server.
+
+The idea was simple:
+
+```
+
+Internet
+│
+▼
+CT1 (Public VPS)
+│
+│ Reverse Proxy
+▼
+CT2 (Private Storage Server)
+
+```
+
+CT1 will act as:
+
+- reverse proxy
+- public entry point
+- FTP gateway
+
+CT2 will only run the **storage backend**.
+
+---
+
+# Creating the storage server (CT2)
+
+On CT2 I installed **MinIO** to create an **S3 compatible storage server**.
+
+I created a systemd service for MinIO:
+
+`/etc/systemd/system/minio.service`
+
+```ini
+[Unit]
+Description=MinIO
+Documentation=https://docs.min.io
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=minio-user
+Group=minio-user
+EnvironmentFile=-/etc/default/minio
+ExecStart=/usr/local/bin/minio server --address ":9000" --ftp="address=:21" /data --console-address ":9001"
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Since I run MinIO as a **non-root user**, I had to allow it to bind to port **21**:
+
+```bash
+sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/minio
+```
+
+After starting the service, MinIO listens on:
+
+```
+9000 → S3 API
+9001 → Web console
+21   → FTP
+```
+
+---
+
+# Reverse proxy using Nginx (CT1)
+
+On CT1 I already had **nginx-proxy running in Docker**, so I used it to proxy requests to CT2.
+
+My configuration:
+
+`/etc/nginx/conf.d/s3.domain.com.conf`
+
+```nginx
+server {
+    listen 80;
+    server_name s3.domain.com us-east-1.s3.domain.com *.us-east-1.s3.domain.com;
+
+    return 301 https://$host$request_uri;
+}
+```
+
+### MinIO S3 API
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name us-east-1.s3.domain.com *.us-east-1.s3.domain.com;
+
+    ssl_certificate     /etc/nginx/certs/domain.com/fullchain.cer;
+    ssl_certificate_key /etc/nginx/certs/domain.com/domain.com.key;
+
+    client_max_body_size 0;
+    proxy_buffering off;
+    proxy_request_buffering off;
+
+    location / {
+        proxy_pass http://10.10.10.3:9000;
+
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 300;
+        proxy_http_version 1.1;
+    }
+}
+```
+
+### MinIO Web Console
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name console.us-east-1.s3.domain.com;
+
+    ssl_certificate     /etc/nginx/certs/domain.com/fullchain.cer;
+    ssl_certificate_key /etc/nginx/certs/domain.com/domain.com.key;
+
+    location / {
+        proxy_pass http://10.10.10.3:9001;
+
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+Now when I open:
+
+```
+console.us-east-1.s3.domain.com
+```
+
+I can access the **MinIO admin dashboard** and manage buckets.
+
+One thing that disappointed me a bit was that **MinIO removed several features from the dashboard**, including user management.
+
+---
+
+# S3 access
+
+S3 clients can access the storage using:
+
+```
+us-east-1.s3.domain.com
+```
+
+or
+
+```
+bucket.us-east-1.s3.domain.com
+```
+
+Both styles are supported by:
+
+- MinIO
+- my nginx configuration
+
+---
+
+# Next step: FTP support
+
+Now I needed **FTP support**.
+
+Some tools (like **DirectAdmin**) cannot backup to S3-compatible storage, while **cPanel supports S3 natively**.
+
+So FTP was necessary.
+
+MinIO has a **built-in FTP server**, so I enabled it by adding these options:
+
+```bash
+--ftp="address=:21"
+--ftp="passive-port-range=30000-40000"
+```
+
+Now MinIO listens on:
+
+```
+21 → FTP control
+30000-40000 → passive ports
+```
+
+---
+
+# NAT problem
+
+Since CT2 is **behind NAT**, I couldn't directly access these ports.
+
+So I forwarded them from CT1.
+
+Instead of using **iptables**, I used **firewalld** with a small Python helper script.
+
+Why?
+
+Because **Docker modifies iptables rules automatically**.
+
+Every time Docker restarts, it may **rewrite iptables chains**, which can break manual rules.
+
+Docker itself even recommends using **firewalld integration**.
+
+---
+
+# Port forwarding script
+
+I wrote a small Python script to automate the rules.
+before going forward, one small note about why I wrote this in Python.
+
+Python is already installed on most Linux servers by default, so I can run the script immediately without installing anything. That makes it a very convenient choice for quick automation tasks like this.
+
+Of course, the language itself doesn't matter much here. If your server already has another runtime installed, you can use that instead.
+
+In fact, if PHP had already been installed on this server, I probably would have written it in PHP instead. :D
+
+```python
+("tcp", "21", "10.10.10.3")
+("tcp", "30000-40000", "10.10.10.3")
+```
+
+After enabling the rules:
+
+```
+CT1:21 → CT2:21
+CT1:30000-40000 → CT2:30000-40000
+```
+
+And finally...
+
+**FTP worked!**
+
+Hooray!
+
+---
+
+# The passive mode problem
+
+But then I faced another issue.
+
+When the FTP client enters passive mode, the server responds with:
+
+```
+Entering Passive Mode (10,10,10,3,a,b)
+```
+
+The port is correct (a\*b).
+
+But the IP is wrong.
+
+It returns the **private IP of CT2**:
+
+```
+10.10.10.3
+```
+
+Which is **not accessible from the internet**.
+
+---
+
+# Why this happens
+
+This problem appears when an FTP server runs **behind NAT**.
+
+Normally FTP servers allow configuring an **external passive IP**, but unfortunately:
+
+MinIO **does not support this option**.
+
+Even worse:
+
+The MinIO implementation on Github was **archived on Feb 13, 2026**, and it is no longer actively maintained.
+
+So there was **no way to fix this from configuration**.
+
+---
+
+# The better solution: SFTPGo
+
+But I didn't give up.
+
+Instead, I used a very powerful tool:
+
+**SFTPGo**
+
+SFTPGo can expose:
+
+- FTP
+- FTPS
+- SFTP
+- Web file manager
+
+And it supports **S3-compatible backends**.
+
+Perfect.
+
+---
+
+# New architecture
+
+Instead of exposing MinIO FTP, I installed **SFTPGo on CT1**.
+
+Then I connected it to MinIO using the S3 endpoint:
+
+```
+http://10.10.10.3:9000
+```
+
+Now the architecture looks like this:
+
+```
+Internet
+   │
+   ▼
+CT1
+ ├─ nginx (reverse proxy)
+ ├─ SFTPGo (FTP/SFTP)
+ │
+ ▼
+CT2
+ └─ MinIO (S3 storage)
+```
+
+With this setup:
+
+- FTP works correctly
+- no NAT problems
+- users get a web dashboard
+- MinIO stays private
+
+And most importantly:
+
+I **no longer need any port forwarding at all**.
+
+---
+
+# Final result
+
+I ended up with a **fully functional storage platform**:
+
+| Component | Role                   |
+| --------- | ---------------------- |
+| Proxmox   | virtualization         |
+| CT1       | public gateway         |
+| nginx     | reverse proxy          |
+| SFTPGo    | FTP/SFTP access        |
+| CT2       | private storage server |
+| MinIO     | S3 backend             |
+
+All running with **only one public IP address**.
+
+Exactly what I wanted. ;)
