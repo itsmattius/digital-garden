@@ -1,7 +1,7 @@
 ---
 title: "Building a Private S3 Storage Server Behind NAT with MinIO, Nginx and SFTPGo"
 publishedDate: 2026-03-10
-lastUpdatedDate: 2026-03-10
+lastUpdatedDate: 2026-03-12
 tags:
   - devops
   - proxmox
@@ -300,6 +300,9 @@ The MinIO implementation on Github was **archived on Feb 13, 2026**, and it is n
 
 So there was **no way to fix this from configuration**.
 
+Later I found a possible workaround for this.  
+See the [update](#update-2-days-later).
+
 ---
 
 # The better solution: SFTPGo
@@ -377,3 +380,31 @@ I ended up with a **fully functional storage platform**:
 All running with **only one public IP address**.
 
 Exactly what I wanted. ;)
+
+# Update (2 days later)
+
+After publishing this post, I still couldn't accept that MinIO doesn't provide an option to configure the public IP address for FTP passive mode.
+
+So I went back and started digging again. I read the official documentation one more time and even checked the MinIO source code on GitHub again to see if there was any hidden option for this.
+
+Today my best friend (who is also a great programmer) sent me a link to an issue in the MinIO repository that was created on **Jun 19, 2023** [<a href="https://github.com/minio/minio/issues/17457" target="_blank" rel="noflow">minio/minio#17457</a>].
+
+In that issue, one of the MinIO contributors (`jiuker`) replied with a very short suggestion:
+
+```
+--ftp="address=192.168.0.10:8021" try this args.
+```
+
+At first I thought this argument was only meant to **bind the FTP server to a specific local IP address**. But based on the response from the issue creator, it seems to behave differently.
+
+The issue creator replied:
+
+> "Yes! That works like a charm! I would expect it to bind to the tcp/ip stack on that address (which it can't because it's not a local address), but it works!"
+
+So apparently MinIO may use the IP address provided in that argument as the **external IP for passive mode**, even if that address is not actually assigned to the server.
+
+I haven't tested this yet, and a lot of things may have changed since that issue was posted.
+
+At this point I'm actually happier with the **SFTPGo setup** and the web panel it provides, so I don't feel the need to switch back.
+
+But if you're trying to run **MinIO FTP behind NAT**, this option might be worth testing.
