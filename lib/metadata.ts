@@ -39,7 +39,7 @@ const siteMetadata: SiteMetaData = {
     link: "https://devhunt.org/tool/modern-developer-blog-template-digital-garden-starter",
   },
   postsPerPage: 10,
-  postsOnHomePage: 8,
+  postsOnHomePage: 4,
   projectsOnHomePage: 4,
 };
 
