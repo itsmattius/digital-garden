@@ -1,0 +1,445 @@
+---
+title: "Run Your Own Private Network with Headscale (Self-Hosted Tailscale)"
+publishedDate: 2026-04-28
+tags:
+  - networking
+  - vpn
+  - self-hosted
+  - docker
+  - headscale
+  - tailscale
+description: "Learn how to build your own zero-trust private network using Headscale, the self-hosted alternative to Tailscale."
+status: "published"
+---
+
+## What is Tailscale?
+
+Before we get into self-hosting things and making life harder for ourselves (on purpose) :D, let’s start simple.
+
+Tailscale is:
+
+- A modern VPN built on WireGuard
+- An overlay network between your devices
+- A system that just, connects your machines together like they’re on the same LAN
+
+And honestly, the magic part is that it _feels boring_. In a good way.
+
+You install it, log in, and suddenly your laptop, server, phone, and even that weird old device in the corner can talk to each other securely — no port forwarding, no firewall nightmares.
+
+Behind the scenes it uses:
+
+- NAT traversal to connect devices directly
+- DERP relay servers when direct connection fails
+
+You don’t usually think about this, and that’s exactly why it’s great.
+
+---
+
+### Important Concept: Control Server
+
+Now here’s the part most people never think about.
+
+There’s a **control server** sitting in the middle of everything.
+
+It’s basically the brain of the network:
+
+- Exchanges public keys
+- Assigns IP addresses
+- Manages users and devices
+- Applies ACL policies
+- Handles routing and sharing
+
+Tailscale runs this for you.
+
+You don’t see it. You don’t manage it. You just trust it.
+
+**Headscale replaces this part.**
+
+And that’s where things get interesting.
+
+---
+
+## Why Headscale Instead of Tailscale?
+
+Let’s address the obvious question first:
+
+> Why not just use Tailscale?
+
+Seriously, why not?
+
+Honestly — **you probably should**.
+
+<a href="https://tailscale.com/" target="_blank" rel="noflow">
+  Tailscale
+</a> is amazing:
+
+- Setup takes minutes
+- The UI is beautiful
+- Everything just works
+- Free for personal use (at least at the time of writing)
+
+For 90% of people, it’s the perfect solution.
+
+No drama. No maintenance. No headaches.
+
+---
+
+### So why do I use Headscale?
+
+This is where it stops being purely technical and becomes a bit, personal.
+
+I’m a programmer.  
+And I have a bad habit of asking:
+
+> “Okay, but how does this actually work?”
+
+I like to:
+
+- Run things locally
+- Understand what’s happening under the hood
+- Break stuff (accidentally, or not :D)
+- Fix it again and learn something in the process
+
+Sometimes the goal isn’t efficiency.
+
+Sometimes the goal is curiosity.
+
+That’s exactly why I started using **Headscale**.
+
+> Headscale is an open-source implementation of the Tailscale control server.
+
+So instead of trusting someone else’s control plane, you run your own.
+
+---
+
+### When does Headscale actually make sense?
+
+Beyond curiosity, there _are_ real reasons to use it.
+
+Especially if you’re building something serious:
+
+- You deal with **sensitive or critical data**
+- You need **full control over your infrastructure**
+- You want a **zero-trust network** you fully own
+- You can’t rely on third-party SaaS
+
+In those cases, self-hosting isn’t just “cool” — it’s necessary.
+
+---
+
+## Why Not Just Use WireGuard Directly?
+
+At this point you might be thinking:
+
+> “Why not just use WireGuard and skip all of this?”
+
+That’s a fair question.
+
+And yes — many setups do exactly that.
+
+But here’s the reality:
+
+WireGuard gives you the _engine_, not the _car_.
+
+If you go raw WireGuard, you’ll end up dealing with:
+
+- Manual key management
+- Peer configuration
+- Routing rules
+- NAT traversal
+- Keeping configs in sync across devices
+
+It works, until it doesn’t.
+
+And then it becomes a mess **very quickly**.
+
+---
+
+### What Tailscale / Headscale Actually Add
+
+Think of them as a control layer on top of WireGuard:
+
+- Automatic key exchange
+- Device discovery
+- NAT traversal
+- Access control (ACLs)
+- Route management
+
+In short:
+
+> They take something powerful, and make it usable.
+
+---
+
+## Let’s Start (Docker Setup)
+
+Alright, enough theory.
+
+Let’s build something.
+
+As usual, I’m using:
+
+- Docker (because I like clean setups)
+- nginx-proxy (because I like it :D)
+
+---
+
+## Step 1 — Postgres Database
+
+Headscale needs a database.
+
+You _can_ use something like Supabase, but if you’re already self-hosting, just go all in and run Postgres locally.
+
+```yaml
+db:
+  image: postgres:18.3-alpine
+  container_name: headscale-db
+  restart: unless-stopped
+  environment:
+    POSTGRES_USER: postgres
+    POSTGRES_DB: headscale
+    POSTGRES_PASSWORD: POSTGRES_PASSWORD_HERE
+    ADMINER_DEFAULT_SERVER: postgres
+  volumes:
+    - postgres-data:/var/lib/postgresql
+```
+
+> Don’t forget to define `postgres-data` in your `volumes` section — I _always_ forget this at least once.
+
+---
+
+## Step 2 — Headscale Service
+
+```yaml
+headscale:
+  image: headscale/headscale:0.24.3
+  container_name: headscale
+  restart: unless-stopped
+  command: serve
+  depends_on:
+    - db
+  environment:
+    VIRTUAL_HOST: region.hs.mydomain.com
+    VIRTUAL_PORT: 8080
+  ports:
+    - "3478:3478/udp"
+  volumes:
+    - ./config.yml:/etc/headscale/config.yaml
+    - ./acls.json:/etc/headscale/acls.json
+    - headscale-data:/var/lib/headscale
+```
+
+---
+
+### Notes
+
+#### Version
+
+I’m using `0.24.3` for a very specific (and slightly annoying) reason:
+
+- I have an old OpenWrt router
+- It only supports Tailscale `1.58.2`
+- Newer Headscale versions dropped compatibility
+
+So, yeah. Real-world constraints :D
+
+If you don’t have this problem, just use `latest` and move on.
+
+---
+
+#### nginx-proxy
+
+- `VIRTUAL_HOST` exposes your service
+- Make sure your DNS is pointing correctly
+
+If something doesn’t work, it’s probably DNS.
+(It’s always DNS.)
+
+---
+
+#### Config File
+
+Here’s a full example:
+
+<a href="https://github.com/juanfont/headscale/blob/main/config-example.yaml" target="_blank" rel="noflow">
+  github.com/juanfont/headscale/blob/main/config-example.yaml
+</a>
+
+---
+
+#### ACL Policies
+
+ACLs are where things get powerful _and_ dangerous.
+
+They control:
+
+- Who can access what
+- Which devices can talk to each other
+
+Take your time with this part.
+
+Docs:
+
+<a href="https://headscale.net/stable/ref/acls/" target="_blank" rel="noflow">
+  headscale.net/stable/ref/acls/
+</a>
+
+---
+
+#### DERP Port
+
+```yaml
+- "3478:3478/udp"
+```
+
+You’ll need this if:
+
+- You run your own DERP server
+- Or want reliable fallback connections
+
+---
+
+## Run Everything
+
+```bash
+docker compose up -d
+```
+
+Still one of my favorite commands.
+
+> It spins up a whole little universe, and somehow everything works (most of the time).
+
+---
+
+## Where is the UI?
+
+Here’s the moment where expectations meet reality:
+
+Headscale is **CLI-only**.
+
+No dashboard. No Tables. No pretty buttons.
+
+Just you, and the terminal.
+
+---
+
+## Step 3 — Add a Web UI (Headplane)
+
+Luckily, the community stepped in.
+
+There are a few UI options, but I’m using:
+
+<a href="https://github.com/tale/headplane" target="_blank" rel="noflow">
+  github.com/tale/headplane
+</a>
+
+---
+
+```yaml
+headplane:
+  image: ghcr.io/tale/headplane:0.5.10
+  container_name: headplane
+  restart: unless-stopped
+  volumes:
+    - ./headplane-config.yml:/etc/headplane/config.yaml
+    - ./config.yml:/etc/headscale/config.yaml:ro
+    - headplane-data:/var/lib/headplane
+  environment:
+    VIRTUAL_HOST: region.hs.mydomain.com
+    VIRTUAL_PATH: /admin
+    VIRTUAL_PORT: 3000
+```
+
+---
+
+### Notes
+
+- Version `0.5.10` matches my setup
+- You can use:
+
+  - Same domain (`/admin`)
+  - Or a separate subdomain
+
+---
+
+## Step 4 — Create API Key
+
+```bash
+docker compose exec headscale headscale apikeys create
+```
+
+You’ll need this to log into Headplane.
+
+---
+
+## Step 5 — Create a User
+
+You can do this:
+
+- Via CLI
+- Or via the UI
+
+I usually start with CLI, then forget commands and switch to UI :D
+
+---
+
+## Step 6 — Connect a Device
+
+On your client:
+
+```bash
+sudo tailscale login --login-server https://region.hs.mydomain.com
+```
+
+---
+
+### What happens next?
+
+1. You get a login URL
+2. You open it
+3. You get a command like this:
+
+```bash
+headscale nodes register --user USERNAME --key KEY
+```
+
+---
+
+### Run it inside your container:
+
+```bash
+docker compose exec headscale \
+  headscale nodes register --user USERNAME --key KEY
+```
+
+Replace `USERNAME` with your actual user.
+
+---
+
+## Done!
+
+If everything worked (and you didn’t fight Docker for an hour :D), you now have:
+
+- A fully self-hosted Tailscale-like network
+- Your own control server
+- Complete ownership of your private network
+
+---
+
+## Final Thoughts
+
+If I had to summarize:
+
+- Want something that _just works_ → use Tailscale
+- Want full control → use Headscale
+- Want to learn how things actually work → definitely try Headscale
+
+For me, this was less about replacing Tailscale,
+and more about understanding it.
+
+---
+
+And yeah, it was absolutely worth it. Even the parts that broke.
+
+As a certain someone would say: **Thank you for your attention to this matter!**  
+and now it’s stuck in my head :D
